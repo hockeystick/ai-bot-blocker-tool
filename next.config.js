@@ -1,18 +1,14 @@
-// next.config.ts
+// next.config.js
 const path = require('path');
 
-/** @type {import('next').NextConfig} */
+/** @type {import('next').NextConfig} */ // This line can stay, it's a JSDoc comment for type checking in JS
 const nextConfig = {
-  // REQUIRED FOR PLAYWRIGHT/CHROMIUM ON VERCEL
   experimental: {
     outputFileTracingRoot: path.join(__dirname, '../../'),
   },
 
-  // REQUIRED FOR PLAYWRIGHT/CHROMIUM ON VERCEL
   output: 'standalone',
 
-  // OPTIONAL BUT RECOMMENDED:
-  // Custom webpack configuration for server-side bundles.
   webpack: (config, { isServer }) => {
     if (isServer) {
       config.externals.push('@sparticuz/chromium', 'playwright-core');
