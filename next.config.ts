@@ -1,7 +1,24 @@
-import type { NextConfig } from "next";
+// next.config.ts
+const path = require('path');
 
-const nextConfig: NextConfig = {
-  /* config options here */
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // REQUIRED FOR PLAYWRIGHT/CHROMIUM ON VERCEL
+  experimental: {
+    outputFileTracingRoot: path.join(__dirname, '../../'),
+  },
+
+  // REQUIRED FOR PLAYWRIGHT/CHROMIUM ON VERCEL
+  output: 'standalone',
+
+  // OPTIONAL BUT RECOMMENDED:
+  // Custom webpack configuration for server-side bundles.
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals.push('@sparticuz/chromium', 'playwright-core');
+    }
+    return config;
+  },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
