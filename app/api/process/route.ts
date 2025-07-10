@@ -29,15 +29,26 @@ async function saveResult(scanId: string, result: { url: string; isBlocked: bool
 }
 
 export async function GET() {
-  // CRITICAL CHANGE: Removed JSON.parse()
-  // The error implies jobPayload is already an object despite it being stringified on push.
-  const jobPayload = await kv.rpop('scan_queue') as { scanId: string; url: string } | null;
+  // Retrieve stringified job payload from queue
+  const rawJobPayload = await kv.rpop('scan_queue');
 
-  if (!jobPayload) {
+  if (!rawJobPayload) {
     return NextResponse.json({ message: 'No jobs in queue.' });
   }
 
-  const { scanId, url } = jobPayload; // Destructure directly from jobPayload
+  // Parse the stringified payload. This is necessary because jobs are added with JSON.stringify().
+  let jobPayload: { scanId: string; url: string };
+  try {
+    // Ensure rawJobPayload is treated as a string before parsing
+    jobPayload = JSON.parse(String(rawJobPayload));
+  } catch (error) {
+    console.error("Failed to parse job payload:", rawJobPayload, error);
+    // Consider how to handle malformed job payloads. For now, returning an error.
+    // Alternatively, could move to a dead-letter queue or log and discard.
+    return NextResponse.json({ message: 'Malformed job payload in queue.' }, { status: 500 });
+  }
+
+  const { scanId, url } = jobPayload;
 
   try {
     const robotsUrl = new URL('/robots.txt', url).toString();
@@ -58,34 +69,51 @@ export async function GET() {
           return NextResponse.json({ message: 'Job processed.' });
         }
       }
-    } catch { 
-        // CORRECTED: This block now has no unused variables.
-        /* Ignore robots.txt errors and proceed */ 
+    } catch (error) {
+        // Log if robots.txt fetch fails, then proceed with Playwright checks.
+        console.warn(`Failed to fetch or parse robots.txt for ${url}:`, error instanceof Error ? error.message : String(error));
+        // Optionally, save a specific state if needed, e.g.:
+        // await saveResult(scanId, { url, isBlocked: false, blockingMethod: 'robots.txt', details: 'robots.txt not accessible or parse error' });
+        // For now, we just log and proceed to Playwright check as per original logic.
     }
     
-    let browser;
+    let browser = null; // Initialize browser to null
     try {
       browser = await playwright.chromium.launch({
         args: chromium.args,
         executablePath: await chromium.executablePath(),
-        headless: true, // CORRECTED: Changed from chromium.headless to true
+        headless: true,
       });
 
-      const context = await browser.newContext({ userAgent: AI_USER_AGENTS[0].value });
-      const page = await context.newPage();
-      
-      const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      for (const agent of AI_USER_AGENTS) {
+        let context = null;
+        try {
+          context = await browser.newContext({ userAgent: agent.value });
+          const page = await context.newPage();
 
-      if (response && !response.ok()) {
-        await saveResult(scanId, { url, isBlocked: true, blockingMethod: 'HTTP Status', details: `Blocked with status ${response.status()} (as GPTBot)` });
-      } else {
-        const bodyContent = (await page.content()).toLowerCase();
-        if (bodyContent.includes('access denied') || bodyContent.includes('forbidden') || bodyContent.includes('not permitted')) {
-          await saveResult(scanId, { url, isBlocked: true, blockingMethod: 'JavaScript/HTML', details: 'Blocked via page content (as GPTBot)' });
-        } else {
-          await saveResult(scanId, { url, isBlocked: false, blockingMethod: 'none', details: 'No blocking mechanisms detected.' });
+          const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+
+          if (response && !response.ok()) {
+            await saveResult(scanId, { url, isBlocked: true, blockingMethod: 'HTTP Status', details: `Blocked with status ${response.status()} (as ${agent.name})` });
+            // If blocked for one agent, no need to check others via Playwright for this URL.
+            return NextResponse.json({ message: 'Job processed, Playwright block detected.' });
+          }
+
+          const bodyContent = (await page.content()).toLowerCase();
+          if (bodyContent.includes('access denied') || bodyContent.includes('forbidden') || bodyContent.includes('not permitted')) {
+            await saveResult(scanId, { url, isBlocked: true, blockingMethod: 'JavaScript/HTML', details: `Blocked via page content (as ${agent.name})` });
+            // If blocked for one agent, no need to check others via Playwright for this URL.
+            return NextResponse.json({ message: 'Job processed, Playwright block detected.' });
+          }
+        } finally {
+          if (context) {
+            await context.close();
+          }
         }
       }
+      // If loop completes, no Playwright blocking was detected for any agent
+      await saveResult(scanId, { url, isBlocked: false, blockingMethod: 'none', details: 'No Playwright blocking detected for any AI user agent.' });
+
     } finally {
         if(browser) await browser.close();
     }

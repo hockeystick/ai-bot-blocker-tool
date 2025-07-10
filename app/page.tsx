@@ -14,6 +14,8 @@ export default function HomePage() {
   const [file, setFile] = useState<File | null>(null);
   const [results, setResults] = useState<ScanResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [pollingError, setPollingError] = useState<string | null>(null);
+  const [scanCompleteMessage, setScanCompleteMessage] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -43,10 +45,12 @@ export default function HomePage() {
         if (isComplete) {
           clearInterval(interval);
           setIsLoading(false);
-          alert('Scan Complete!');
+          setScanCompleteMessage('Scan Complete!');
+          // alert('Scan Complete!'); // Replaced with state message
         }
       } catch (error) {
         console.error("Polling error:", error);
+        setPollingError(`Polling failed: ${error instanceof Error ? error.message : "An unknown error occurred"}`);
         clearInterval(interval);
         setIsLoading(false);
       }
@@ -55,11 +59,14 @@ export default function HomePage() {
 
   const handleScan = async () => {
     if (!file) {
-      alert('Please upload a CSV file first.');
+      alert('Please upload a CSV file first.'); // Simple alert for this specific validation is fine
       return;
     }
     setIsLoading(true);
     setResults([]);
+    setPollingError(null); // Clear previous polling errors
+    setScanCompleteMessage(null); // Clear previous completion message
+
 
     const formData = new FormData();
     formData.append('file', file);
@@ -113,8 +120,20 @@ export default function HomePage() {
           </button>
         </div>
 
+        {pollingError && (
+          <div className="mt-4 p-3 bg-red-100 text-red-700 border border-red-400 rounded-md text-center">
+            <p><strong>Error:</strong> {pollingError}</p>
+          </div>
+        )}
+
+        {scanCompleteMessage && !isLoading && (
+           <div className="mt-4 p-3 bg-green-100 text-green-700 border border-green-400 rounded-md text-center">
+            <p>{scanCompleteMessage}</p>
+          </div>
+        )}
+
         {results.length > 0 && (
-          <div className="mt-10 w-full overflow-hidden rounded-lg shadow-lg">
+          <div className="mt-6 w-full overflow-hidden rounded-lg shadow-lg">
             <table className="min-w-full bg-white">
               <thead className="bg-gray-800 text-white">
                 <tr>
