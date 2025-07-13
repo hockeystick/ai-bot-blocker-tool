@@ -1,14 +1,9 @@
-// next.config.js
-const path = require('path');
-
-/** @type {import('next').NextConfig} */ // This line can stay, it's a JSDoc comment for type checking in JS
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    outputFileTracingRoot: path.join(__dirname, '../../'),
+    serverComponentsExternalPackages: ['@sparticuz/chromium', 'playwright-core'],
   },
-
-  output: 'standalone',
-
+  
   webpack: (config, { isServer }) => {
     if (isServer) {
       config.externals.push('@sparticuz/chromium', 'playwright-core');

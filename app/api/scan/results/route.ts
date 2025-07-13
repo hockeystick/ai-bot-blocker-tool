@@ -2,6 +2,9 @@ import { db } from '@vercel/postgres';
 import { kv } from '@vercel/kv';
 import { NextResponse } from 'next/server';
 
+export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);

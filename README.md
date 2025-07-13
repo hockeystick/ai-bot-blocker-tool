@@ -1,36 +1,115 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Bot Blocker Tool
 
-## Getting Started
+A Next.js web application that helps website owners check if their sites block AI crawlers and bots. This is a defensive security tool for understanding your website's protection against AI scraping.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Upload CSV files containing website URLs
+- Check multiple blocking mechanisms:
+  - robots.txt analysis for AI bot blocks
+  - HTTP status code testing with AI user agents
+  - Content analysis for blocking messages
+- Real-time progress tracking
+- Comprehensive results dashboard
+
+## Supported AI Crawlers
+
+The tool tests against major AI crawlers including:
+- GPTBot (OpenAI)
+- Google-Extended
+- anthropic-ai (Claude)
+- PerplexityBot
+- CCBot (Common Crawl)
+- YouBot, Bytespider, and others
+
+## Prerequisites
+
+- Node.js 18+ 
+- Vercel account (for KV and Postgres)
+
+## Setup for Vercel Deployment
+
+### 1. Database Setup
+
+First, set up your Vercel Postgres database:
+
+1. Go to [Vercel Dashboard](https://vercel.com/dashboard)
+2. Create a new Postgres database
+3. Run the schema setup:
+
+```sql
+-- Copy and run the contents of schema.sql in your Vercel Postgres console
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. KV Store Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Set up Vercel KV for the job queue:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. In your Vercel project, go to Storage tab
+2. Create a new KV store
+3. Note the connection details
 
-## Learn More
+### 3. Environment Variables
 
-To learn more about Next.js, take a look at the following resources:
+Set these environment variables in your Vercel project:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+# From your Vercel KV setup
+KV_REST_API_URL=your_kv_rest_api_url
+KV_REST_API_TOKEN=your_kv_rest_api_token
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# From your Vercel Postgres setup  
+POSTGRES_URL=your_postgres_url
+POSTGRES_PRISMA_URL=your_postgres_prisma_url
+POSTGRES_URL_NO_SSL=your_postgres_url_no_ssl
+POSTGRES_URL_NON_POOLING=your_postgres_url_non_pooling
+POSTGRES_USER=your_postgres_user
+POSTGRES_HOST=your_postgres_host
+POSTGRES_PASSWORD=your_postgres_password
+POSTGRES_DATABASE=your_postgres_database
+```
 
-## Deploy on Vercel
+### 4. Deploy
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Push your code to GitHub
+2. Connect the repository to Vercel
+3. Deploy!
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Local Development
+
+```bash
+# Install dependencies
+npm install
+
+# Create .env.local with your environment variables
+cp .env.example .env.local
+
+# Run development server
+npm run dev
+```
+
+## Architecture
+
+- **Frontend**: Next.js with Tailwind CSS
+- **Queue System**: Vercel KV (Redis) for job processing
+- **Database**: Vercel Postgres for results storage
+- **Browser Automation**: Playwright with Chromium for testing
+- **Runtime**: Edge runtime for optimal serverless performance
+
+## How It Works
+
+1. Upload a CSV file containing URLs
+2. URLs are parsed and queued for processing
+3. Each URL is tested using:
+   - robots.txt analysis for bot-specific rules
+   - HTTP requests with AI user agents
+   - Content scanning for blocking messages
+4. Results are stored and displayed in real-time
+
+## Cron Job
+
+The app includes a cron job (`vercel.json`) that processes the queue every minute. This ensures continuous processing of scan jobs.
+
+## Security Note
+
+This tool is designed for defensive security purposes - to help website owners understand their own site's protection mechanisms. Use responsibly and only on websites you own or have permission to test.

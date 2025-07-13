@@ -12,6 +12,7 @@
     "@sparticuz/chromium": "^123.0.1",
     "@vercel/kv": "latest",
     "@vercel/postgres": "latest",
+    "autoprefixer": "^10.4.21",
     "axios": "^1.6.8",
     "cheerio": "^1.0.0-rc.12",
     "nanoid": "^5.0.7",
