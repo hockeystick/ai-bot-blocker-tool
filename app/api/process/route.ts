@@ -6,7 +6,7 @@ import playwright from 'playwright-core';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300;
+export const maxDuration = 60; // Reduced from 300 to 60 seconds
 export const dynamic = 'force-dynamic';
 
 const AI_USER_AGENTS = [
@@ -31,20 +31,39 @@ async function saveResult(scanId: string, result: { url: string; isBlocked: bool
 }
 
 export async function GET() {
-  // CRITICAL CHANGE: Removed JSON.parse()
-  // The error implies jobPayload is already an object despite it being stringified on push.
+  const startTime = Date.now();
+  
+  // Get job from queue
   const jobPayload = await kv.rpop('scan_queue') as { scanId: string; url: string } | null;
 
   if (!jobPayload) {
     return NextResponse.json({ message: 'No jobs in queue.' });
   }
 
-  const { scanId, url } = jobPayload; // Destructure directly from jobPayload
+  const { scanId, url } = jobPayload;
+  
+  // Validate URL
+  try {
+    new URL(url);
+  } catch {
+    await saveResult(scanId, { 
+      url, 
+      isBlocked: false, 
+      blockingMethod: 'error', 
+      details: 'Invalid URL format' 
+    });
+    return NextResponse.json({ message: 'Invalid URL processed.' });
+  }
 
   try {
+    // Check robots.txt with shorter timeout
     const robotsUrl = new URL('/robots.txt', url).toString();
     try {
-      const robotsRes = await axios.get(robotsUrl, { timeout: 5000 });
+      const robotsRes = await axios.get(robotsUrl, { 
+        timeout: 3000,
+        maxRedirects: 3,
+        validateStatus: (status) => status < 500 // Accept 4xx as valid responses
+      });
       const robotsTxt = robotsRes.data;
 
       const universalBlockRegex = /User-agent: \*\s*Disallow: \//i;
@@ -76,16 +95,48 @@ export async function GET() {
       const context = await browser.newContext({ userAgent: AI_USER_AGENTS[0].value });
       const page = await context.newPage();
       
-      const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      // Set shorter timeout for page load
+      const response = await page.goto(url, { 
+        waitUntil: 'domcontentloaded', 
+        timeout: 15000 // Reduced from 20000 to 15000
+      });
+      
+      // Check if we've exceeded our time budget
+      const elapsed = Date.now() - startTime;
+      if (elapsed > 45000) { // 45 second timeout
+        throw new Error('Processing timeout exceeded');
+      }
 
       if (response && !response.ok()) {
         await saveResult(scanId, { url, isBlocked: true, blockingMethod: 'HTTP Status', details: `Blocked with status ${response.status()} (as GPTBot)` });
       } else {
         const bodyContent = (await page.content()).toLowerCase();
-        if (bodyContent.includes('access denied') || bodyContent.includes('forbidden') || bodyContent.includes('not permitted')) {
-          await saveResult(scanId, { url, isBlocked: true, blockingMethod: 'JavaScript/HTML', details: 'Blocked via page content (as GPTBot)' });
+        
+        // More comprehensive content analysis
+        const blockingIndicators = [
+          'access denied', 'forbidden', 'not permitted', 'blocked',
+          'bot detected', 'automated traffic', 'suspicious activity',
+          'captcha', 'cloudflare', 'rate limit', 'too many requests'
+        ];
+        
+        const foundIndicator = blockingIndicators.find(indicator => 
+          bodyContent.includes(indicator)
+        );
+        
+        if (foundIndicator) {
+          await saveResult(scanId, { 
+            url, 
+            isBlocked: true, 
+            blockingMethod: 'Content Detection', 
+            details: `Blocking detected: "${foundIndicator}" found in page content` 
+          });
         } else {
-          await saveResult(scanId, { url, isBlocked: false, blockingMethod: 'none', details: 'No blocking mechanisms detected.' });
+          await saveResult(scanId, { 
+            url, 
+            isBlocked: false, 
+            blockingMethod: 'Passed All Tests', 
+            details: `No blocking detected. Page loaded successfully as ${AI_USER_AGENTS[0].name}` 
+          });
         }
       }
     } finally {
@@ -93,10 +144,24 @@ export async function GET() {
     }
 
   } catch (error) {
-    // CORRECTED: This block now properly handles the error type without 'any'.
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Failed to process ${url}`, error);
-    await saveResult(scanId, { url, isBlocked: false, blockingMethod: 'error', details: `Scan failed: ${errorMessage.substring(0, 200)}` });
+    const elapsed = Date.now() - startTime;
+    
+    console.error(`Failed to process ${url} after ${elapsed}ms:`, error);
+    
+    // Determine if it's a timeout or other error
+    const isTimeout = errorMessage.includes('timeout') || 
+                     errorMessage.includes('Timeout') || 
+                     elapsed > 45000;
+    
+    await saveResult(scanId, { 
+      url, 
+      isBlocked: false, 
+      blockingMethod: isTimeout ? 'timeout' : 'error', 
+      details: isTimeout 
+        ? `Request timed out after ${Math.round(elapsed/1000)}s`
+        : `Error: ${errorMessage.substring(0, 150)}` 
+    });
   }
 
   return NextResponse.json({ message: 'Job processed.' });
